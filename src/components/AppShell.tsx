@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
 import Sidebar from './Sidebar';
@@ -35,6 +35,8 @@ type Props = {
   initialCategories: Category[];
 };
 
+const SYNC_CHANNEL = (uid: string) => `sido-sync-${uid}`;
+
 export default function AppShell({ user, initialTasks, initialCategories }: Props) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -43,31 +45,29 @@ export default function AppShell({ user, initialTasks, initialCategories }: Prop
   const supabaseRef = useRef(createClient());
   const supabase = supabaseRef.current;
 
+  const refetch = useCallback(async () => {
+    const [{ data: t }, { data: c }] = await Promise.all([
+      supabase.from('tasks').select('*').order('position'),
+      supabase.from('categories').select('*').order('position'),
+    ]);
+    if (t) setTasks(t as Task[]);
+    if (c) setCategories(c as Category[]);
+    setSyncStatus('synced');
+  }, [supabase]);
+
+  const broadcastRefresh = useCallback(async () => {
+    await supabase.channel(SYNC_CHANNEL(user.id)).send({
+      type: 'broadcast', event: 'refresh', payload: {},
+    });
+  }, [supabase, user.id]);
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const channel = supabase
-      .channel('tasks-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
-        const uid = (payload.new as Task)?.user_id ?? (payload.old as Task)?.user_id;
-        if (uid && uid !== user.id) return;
-        if (payload.eventType === 'INSERT') {
-          setTasks(prev => [payload.new as Task, ...prev.filter(t => t.id !== (payload.new as Task).id)]);
-        } else if (payload.eventType === 'UPDATE') {
-          setTasks(prev => prev.map(t => t.id === (payload.new as Task).id ? payload.new as Task : t));
-        } else if (payload.eventType === 'DELETE') {
-          setTasks(prev => prev.filter(t => t.id !== (payload.old as Task).id));
-        }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, (payload) => {
-        const uid = (payload.new as Category)?.user_id ?? (payload.old as Category)?.user_id;
-        if (uid && uid !== user.id) return;
-        if (payload.eventType === 'INSERT') {
-          setCategories(prev => [...prev, payload.new as Category].sort((a, b) => a.position - b.position));
-        } else if (payload.eventType === 'UPDATE') {
-          setCategories(prev => prev.map(c => c.id === (payload.new as Category).id ? payload.new as Category : c));
-        } else if (payload.eventType === 'DELETE') {
-          setCategories(prev => prev.filter(c => c.id !== (payload.old as Category).id));
-        }
+      .channel(SYNC_CHANNEL(user.id))
+      .on('broadcast', { event: 'refresh' }, () => {
+        setSyncStatus('syncing');
+        refetch();
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') setSyncStatus('synced');
@@ -102,6 +102,7 @@ export default function AppShell({ user, initialTasks, initialCategories }: Prop
           onTasksChange={setTasks}
           onSyncStart={() => setSyncStatus('syncing')}
           onSyncEnd={(ok) => setSyncStatus(ok ? 'synced' : 'error')}
+          onBroadcast={broadcastRefresh}
         />
       </main>
     </div>

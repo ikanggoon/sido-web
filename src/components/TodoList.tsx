@@ -13,9 +13,10 @@ type Props = {
   onTasksChange: (updater: (prev: Task[]) => Task[]) => void;
   onSyncStart: () => void;
   onSyncEnd: (ok: boolean) => void;
+  onBroadcast: () => Promise<void>;
 };
 
-export default function TodoList({ tasks, categories, selectedCategoryId, userId, onTasksChange, onSyncStart, onSyncEnd }: Props) {
+export default function TodoList({ tasks, categories, selectedCategoryId, userId, onTasksChange, onSyncStart, onSyncEnd, onBroadcast }: Props) {
   const supabase = createClient();
 
   const filtered = tasks.filter(t =>
@@ -38,33 +39,24 @@ export default function TodoList({ tasks, categories, selectedCategoryId, userId
       .update({ is_done: newDone, done_date: newDone ? new Date().toISOString() : null })
       .eq('id', task.id);
     onSyncEnd(!error);
+    if (!error) onBroadcast();
   };
 
   const handleDelete = async (task: Task) => {
     onTasksChange(prev => prev.filter(t => t.id !== task.id));
     onSyncStart();
-    const { error } = await supabase
-      .from('tasks')
-      .delete()
-      .eq('id', task.id);
+    const { error } = await supabase.from('tasks').delete().eq('id', task.id);
     onSyncEnd(!error);
+    if (!error) onBroadcast();
   };
 
   const handleAdd = async (title: string) => {
     const tempId = crypto.randomUUID();
-    const now = new Date().toISOString();
     const optimistic: Task = {
-      id: tempId,
-      user_id: userId,
-      category_id: selectedCategoryId,
-      title,
-      detail: null,
-      priority: 'nu',
-      due: null,
-      is_done: false,
-      done_date: null,
-      position: 0,
-      updated_at: now,
+      id: tempId, user_id: userId, category_id: selectedCategoryId,
+      title, detail: null, priority: 'nu', due: null,
+      is_done: false, done_date: null, position: 0,
+      updated_at: new Date().toISOString(),
     };
     onTasksChange(prev => [optimistic, ...prev]);
     onSyncStart();
@@ -79,6 +71,7 @@ export default function TodoList({ tasks, categories, selectedCategoryId, userId
       onTasksChange(prev => prev.filter(t => t.id !== tempId));
     }
     onSyncEnd(!error);
+    if (!error) onBroadcast();
   };
 
   return (
@@ -90,12 +83,10 @@ export default function TodoList({ tasks, categories, selectedCategoryId, userId
 
       <div className="flex-1 overflow-y-auto">
         <AddTodo onAdd={handleAdd} />
-
         <ul className="px-4 pb-4">
           {active.map(task => (
             <TodoItem key={task.id} task={task} onToggle={handleToggle} onDelete={handleDelete} />
           ))}
-
           {done.length > 0 && (
             <>
               <li className="text-xs text-gray-400 px-2 py-3 mt-2">완료된 항목 {done.length}개</li>
@@ -104,7 +95,6 @@ export default function TodoList({ tasks, categories, selectedCategoryId, userId
               ))}
             </>
           )}
-
           {filtered.length === 0 && (
             <li className="text-center text-sm text-gray-400 py-16">할 일이 없습니다</li>
           )}
