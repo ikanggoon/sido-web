@@ -10,12 +10,11 @@ export default async function AppPage() {
     supabase
       .from('tasks')
       .select('*')
-      .eq('deleted', false)
-      .order('created_at', { ascending: false }),
+      .order('position', { ascending: true }),
     supabase
       .from('categories')
       .select('*')
-      .order('sort_order', { ascending: true }),
+      .order('position', { ascending: true }),
   ]);
 
   return (

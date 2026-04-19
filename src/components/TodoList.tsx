@@ -1,22 +1,9 @@
 'use client';
 
 import { createClient } from '@/lib/supabase/client';
+import type { Task, Category } from './AppShell';
 import TodoItem from './TodoItem';
 import AddTodo from './AddTodo';
-
-type Task = {
-  id: string;
-  remote_id: string | null;
-  title: string;
-  done: boolean;
-  category_id: string | null;
-  due_date: string | null;
-  priority: number;
-  deleted: boolean;
-  updated_at: string;
-};
-
-type Category = { id: string; name: string };
 
 type Props = {
   tasks: Task[];
@@ -32,24 +19,23 @@ export default function TodoList({ tasks, categories, selectedCategoryId, userId
   const supabase = createClient();
 
   const filtered = tasks.filter(t =>
-    !t.deleted &&
-    (selectedCategoryId === null || t.category_id === selectedCategoryId)
+    selectedCategoryId === null || t.category_id === selectedCategoryId
   );
 
-  const active = filtered.filter(t => !t.done);
-  const done = filtered.filter(t => t.done);
+  const active = filtered.filter(t => !t.is_done);
+  const done = filtered.filter(t => t.is_done);
 
   const categoryName = selectedCategoryId
     ? categories.find(c => c.id === selectedCategoryId)?.name ?? '카테고리'
     : '전체';
 
   const handleToggle = async (task: Task) => {
-    const newDone = !task.done;
-    onTasksChange(prev => prev.map(t => t.id === task.id ? { ...t, done: newDone } : t));
+    const newDone = !task.is_done;
+    onTasksChange(prev => prev.map(t => t.id === task.id ? { ...t, is_done: newDone } : t));
     onSyncStart();
     const { error } = await supabase
       .from('tasks')
-      .update({ done: newDone, updated_at: new Date().toISOString(), dirty: true })
+      .update({ is_done: newDone, done_date: newDone ? new Date().toISOString() : null })
       .eq('id', task.id);
     onSyncEnd(!error);
   };
@@ -59,28 +45,39 @@ export default function TodoList({ tasks, categories, selectedCategoryId, userId
     onSyncStart();
     const { error } = await supabase
       .from('tasks')
-      .update({ deleted: true, updated_at: new Date().toISOString(), dirty: true })
+      .delete()
       .eq('id', task.id);
     onSyncEnd(!error);
   };
 
   const handleAdd = async (title: string) => {
-    const newTask: Task = {
-      id: crypto.randomUUID(),
-      remote_id: null,
-      title,
-      done: false,
+    const tempId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const optimistic: Task = {
+      id: tempId,
+      user_id: userId,
       category_id: selectedCategoryId,
-      due_date: null,
-      priority: 0,
-      deleted: false,
-      updated_at: new Date().toISOString(),
+      title,
+      detail: null,
+      priority: 'nu',
+      due: null,
+      is_done: false,
+      done_date: null,
+      position: 0,
+      updated_at: now,
     };
-    onTasksChange(prev => [newTask, ...prev]);
+    onTasksChange(prev => [optimistic, ...prev]);
     onSyncStart();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('tasks')
-      .insert({ ...newTask, user_id: userId, dirty: true });
+      .insert({ user_id: userId, category_id: selectedCategoryId, title, priority: 'nu', position: 0 })
+      .select()
+      .single();
+    if (!error && data) {
+      onTasksChange(prev => prev.map(t => t.id === tempId ? data as Task : t));
+    } else {
+      onTasksChange(prev => prev.filter(t => t.id !== tempId));
+    }
     onSyncEnd(!error);
   };
 

@@ -6,24 +6,27 @@ import type { User } from '@supabase/supabase-js';
 import Sidebar from './Sidebar';
 import TodoList from './TodoList';
 
-type Task = {
+export type Task = {
   id: string;
-  remote_id: string | null;
-  title: string;
-  done: boolean;
+  user_id: string;
   category_id: string | null;
-  due_date: string | null;
-  priority: number;
-  deleted: boolean;
+  title: string;
+  detail: string | null;
+  priority: string;
+  due: string | null;
+  is_done: boolean;
+  done_date: string | null;
+  position: number;
   updated_at: string;
 };
 
-type Category = {
+export type Category = {
   id: string;
-  remote_id: string | null;
+  user_id: string;
   name: string;
   hidden: boolean;
-  sort_order: number;
+  position: number;
+  updated_at: string;
 };
 
 type Props = {
@@ -39,7 +42,6 @@ export default function AppShell({ user, initialTasks, initialCategories }: Prop
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const supabaseRef = useRef(createClient());
   const supabase = supabaseRef.current;
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -47,24 +49,16 @@ export default function AppShell({ user, initialTasks, initialCategories }: Prop
       .channel('tasks-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${user.id}` }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          const newTask = payload.new as Task;
-          if (!newTask.deleted) {
-            setTasks(prev => [newTask, ...prev.filter(t => t.id !== newTask.id)]);
-          }
+          setTasks(prev => [payload.new as Task, ...prev.filter(t => t.id !== (payload.new as Task).id)]);
         } else if (payload.eventType === 'UPDATE') {
-          const updated = payload.new as Task;
-          if (updated.deleted) {
-            setTasks(prev => prev.filter(t => t.id !== updated.id));
-          } else {
-            setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
-          }
+          setTasks(prev => prev.map(t => t.id === (payload.new as Task).id ? payload.new as Task : t));
         } else if (payload.eventType === 'DELETE') {
           setTasks(prev => prev.filter(t => t.id !== (payload.old as Task).id));
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'categories', filter: `user_id=eq.${user.id}` }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          setCategories(prev => [...prev, payload.new as Category].sort((a, b) => a.sort_order - b.sort_order));
+          setCategories(prev => [...prev, payload.new as Category].sort((a, b) => a.position - b.position));
         } else if (payload.eventType === 'UPDATE') {
           setCategories(prev => prev.map(c => c.id === (payload.new as Category).id ? payload.new as Category : c));
         } else if (payload.eventType === 'DELETE') {
@@ -76,7 +70,6 @@ export default function AppShell({ user, initialTasks, initialCategories }: Prop
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setSyncStatus('error');
       });
 
-    channelRef.current = channel;
     return () => { supabase.removeChannel(channel); };
   }, [user.id]);
 
