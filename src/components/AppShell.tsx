@@ -47,7 +47,9 @@ export default function AppShell({ user, initialTasks, initialCategories }: Prop
   useEffect(() => {
     const channel = supabase
       .channel('tasks-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${user.id}` }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
+        const uid = (payload.new as Task)?.user_id ?? (payload.old as Task)?.user_id;
+        if (uid && uid !== user.id) return;
         if (payload.eventType === 'INSERT') {
           setTasks(prev => [payload.new as Task, ...prev.filter(t => t.id !== (payload.new as Task).id)]);
         } else if (payload.eventType === 'UPDATE') {
@@ -56,7 +58,9 @@ export default function AppShell({ user, initialTasks, initialCategories }: Prop
           setTasks(prev => prev.filter(t => t.id !== (payload.old as Task).id));
         }
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'categories', filter: `user_id=eq.${user.id}` }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, (payload) => {
+        const uid = (payload.new as Category)?.user_id ?? (payload.old as Category)?.user_id;
+        if (uid && uid !== user.id) return;
         if (payload.eventType === 'INSERT') {
           setCategories(prev => [...prev, payload.new as Category].sort((a, b) => a.position - b.position));
         } else if (payload.eventType === 'UPDATE') {
