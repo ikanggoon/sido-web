@@ -13,7 +13,7 @@ type Props = {
   onTasksChange: (updater: (prev: Task[]) => Task[]) => void;
   onSyncStart: () => void;
   onSyncEnd: (ok: boolean) => void;
-  onBroadcast: () => Promise<void>;
+  onBroadcast: (deletedIds?: string[]) => Promise<void>;
 };
 
 export default function TodoList({ tasks, categories, selectedCategoryId, userId, onTasksChange, onSyncStart, onSyncEnd, onBroadcast }: Props) {
@@ -47,7 +47,7 @@ export default function TodoList({ tasks, categories, selectedCategoryId, userId
     onSyncStart();
     const { error } = await supabase.from('tasks').delete().eq('id', task.id);
     onSyncEnd(!error);
-    if (!error) onBroadcast();
+    if (!error) onBroadcast([task.id]);
   };
 
   const handleAdd = async (title: string) => {

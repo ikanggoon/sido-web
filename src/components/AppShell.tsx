@@ -55,9 +55,10 @@ export default function AppShell({ user, initialTasks, initialCategories }: Prop
     setSyncStatus('synced');
   }, [supabase]);
 
-  const broadcastRefresh = useCallback(async () => {
+  const broadcastRefresh = useCallback(async (deletedIds: string[] = []) => {
     await supabase.channel(SYNC_CHANNEL(user.id)).send({
-      type: 'broadcast', event: 'refresh', payload: {},
+      type: 'broadcast', event: 'refresh',
+      payload: { deleted_ids: deletedIds },
     });
   }, [supabase, user.id]);
 
